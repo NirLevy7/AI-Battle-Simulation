@@ -12,7 +12,7 @@ Agent::Agent(int _id, Team _team, Role _role, int startR, int startC)
 	currentTarget = { -1, -1 };
 
 	if (role == FIGHTER) {
-		// הגדרת אופי רנדומלית לפי דרישות הפרויקט [cite: 8]
+		// הגדרת אופי רנדומלית לפי דרישות הפרויקט 
 		trait = (rand() % 2 == 0) ? AGGRESSIVE : CAUTIOUS;
 		fleeThreshold = (trait == AGGRESSIVE) ? 0.2 : 0.5;
 		ammoThreshold = (trait == AGGRESSIVE) ? 0 : 10;

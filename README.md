@@ -1,93 +1,135 @@
-AI Tactical Battle Simulation (C++ / OpenGL)
+# AI Tactical Battle Simulation
 
-Final project for an Artificial Intelligence course. A fully autonomous battle simulation between two teams (Team A - Red, Team B - Blue) in a maze environment. The project is written in C++ using the OpenGL (FreeGLUT) library and focuses on implementing advanced decision-making, navigation, and squad tactics algorithms.
+![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
+![OpenGL](https://img.shields.io/badge/OpenGL-FreeGLUT-green)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
 
-Key Features
+A fully autonomous battle simulation between two AI-controlled teams (Red vs. Blue) navigating a procedurally structured maze. Built in C++ with OpenGL (FreeGLUT) as a final project for an Artificial Intelligence course.
 
-Full Autonomy: The characters analyze their environment, make decisions, and act completely independently without player intervention.
+> Add a screenshot or GIF here once you have one — e.g.:  
+> `![Demo](demo.gif)`
 
-Modular Architecture (OOP): The codebase is structured using Object-Oriented Programming principles, divided into classes representing Agents, navigation Cells, and a central game manager.
+---
 
-Real-Time Combat Log: A live UI display of executed actions (shooting, throwing grenades, healing, melee combat) color-coded by team.
+## Table of Contents
 
-Post-Game Statistics Screen: At the end of the battle, an organized table displays the status of the surviving agents (role, trait, HP, and ammo).
+- [Features](#features)
+- [AI Systems](#ai-systems)
+- [Agent Roles](#agent-roles)
+- [Prerequisites](#prerequisites)
+- [Setup & Build](#setup--build)
+- [Controls](#controls)
+- [Project Structure](#project-structure)
 
-Audio Support: Integration of sound effects (gunfire and grenade explosions) for a complete visual and auditory experience.
+---
 
-AI Algorithms & Mechanics
+## Features
 
-1. Finite State Machine (FSM)
-Every Agent operates based on a dynamic state machine updated every turn:
+- **Full Autonomy** — Agents analyze their environment and act independently with no player input.
+- **Real-Time Combat Log** — Live UI panel showing actions (shooting, grenades, healing, melee), color-coded by team.
+- **Post-Game Stats Screen** — Summary table of surviving agents showing role, trait, HP, and ammo.
+- **Audio** — Sound effects for gunfire and grenade explosions via `shoot.wav` / `grenade.wav`.
+- **Influence Map Toggle** — Press `M` to overlay a real-time danger heatmap (red = exposed, green = safe).
 
-STATE_HUNT: Searching for the enemy and moving between rooms.
+---
 
-STATE_COMBAT: Managing tactical combat inside a room, including taking cover, shooting from a distance, or engaging in melee combat when out of ammo.
+## AI Systems
 
-STATE_FLEE: Escaping from combat to another room when the odds of survival are low.
+### 1. Finite State Machine (FSM)
+Each agent runs a state machine updated every tick:
 
-STATE_SEEK_MEDIC / STATE_SEEK_AMMO: Strategic retreat to group up with a support unit (Medic/Supplier) or to find pickups scattered across the map.
+| State | Behavior |
+|---|---|
+| `HUNT` | Roam between rooms searching for enemies |
+| `COMBAT` | Engage in-room: take cover, shoot, or melee when out of ammo |
+| `FLEE` | Retreat to another room when survival odds are low |
+| `SEEK_MEDIC` | Fall back to the team Medic for healing |
+| `SEEK_AMMO` | Fall back to the Supplier or map pickups for ammo |
 
-2. A* Pathfinding
-Every movement on the map, whether to the center of a room, chasing an enemy, or fleeing, is calculated using the A* (A-Star) algorithm, ensuring the shortest path while avoiding walls and obstacles.
+### 2. A\* Pathfinding
+All movement — chasing, fleeing, or regrouping — is routed via A* to find the shortest obstacle-free path.
 
-3. Dynamic Influence Map & Line of Sight (LOS)
-During combat inside a room, agents calculate a "Safety Score" for every possible adjacent cell:
+### 3. Influence Map & Line of Sight (LOS)
+During room combat, agents score every adjacent cell for safety:
+- **Raycasting** (Bresenham's algorithm) determines LOS to enemies.
+- Cells behind cover receive bonus safety score, especially for `Cautious` fighters.
 
-Using Raycasting (Bresenham's line algorithm) to check Line of Sight (LOS) to enemies.
+### 4. Squad Tactics
+- **Vanguard mechanic** — Medics and Suppliers identify the frontline fighter and shadow them rather than wandering.
+- **Baiting / Traps** — A fighter cornered in a room retreats to its center, vacating the doorway to lure enemies into an unfavorable position.
 
-A cell providing Cover receives a higher safety score for soldiers with a "Cautious" trait.
+### 5. Anti-Deadlock (Forced Retreat)
+When an agent is blocked for several consecutive turns it enters `isForcedRetreat` mode: suspends its current goal, pathfinds to the nearest empty room's center, and clears the corridor for teammates.
 
-Heatmap Visualization: Users can press the M key to toggle a real-time display of the danger map in the room (Red = Exposed/Danger, Green = Safe area).
+---
 
-4. Squad Tactics & Cohesion
-Agents operate as a coordinated team rather than solitary individuals:
+## Agent Roles
 
-Vanguard Mechanic: Support units (Medics and Suppliers) do not wander randomly. They identify the "Vanguard" – the fighter currently on the front line facing the enemy – and follow them to provide close support in real-time.
+Each team fields **4 agents**:
 
-Baiting / Traps: When a fighter is inside a room and their enemy is in the corridor, they will retreat to the center of the room, clearing the doorway to lure the enemy inside into a disadvantageous position (since fighting in corridors is restricted).
+| Role | Weapon | Trait | Behavior |
+|---|---|---|---|
+| Fighter (Aggressive) | 30 bullets + grenades | Aggressive | Prioritizes LOS and quick kills; retreats only when critically low on HP |
+| Fighter (Cautious) | 30 bullets + grenades | Cautious | Moves cover-to-cover; avoids unnecessary exposure |
+| Medic | None | — | Follows the vanguard fighter; restores HP to 100% on contact |
+| Supplier | None | — | Follows the vanguard fighter; restores ammo to 30 on contact |
 
-5. Anti-Deadlock / Forced Retreat
-A classic issue in Multi-Agent Pathfinding is collisions in narrow corridors. This project includes a sophisticated deadlock-breaking mechanism:
+---
 
-If an agent detects it is blocked and cannot move for several consecutive turns, it enters an emergency state (isForcedRetreat).
+## Prerequisites
 
-It suspends its current mission, locates the center of the nearest empty room, and forcefully retreats there to clear the path for the rest of the team.
+- **OS:** Windows (x64)
+- **IDE:** Visual Studio 2019 or later
+- **Libraries (included in repo):**
+  - FreeGLUT (`freeglut.lib` / `freeglut.dll`)
+  - GLEW (`glew32.lib` / `glew32.dll`)
+- **Audio files** (`shoot.wav`, `grenade.wav`) must be in the executable's working directory
 
-Entities & Roles
-Each team consists of 4 agents with different roles and "traits" that significantly affect their behavior:
+---
 
-Fighters: Carry a weapon (30 bullets) and can throw grenades. Can have one of two traits:
+## Setup & Build
 
-Aggressive (F(A)): Will prefer to expose themselves to gain Line of Sight and eliminate the enemy quickly. Will only retreat when their health is critically low.
+1. **Clone the repository**
+   ```
+   git clone https://github.com/NirLevy7/AI-Battle-Simulation.git
+   cd AI-Battle-Simulation
+   ```
 
-Cautious (F(C)): Prefer to move from cover to cover and avoid unnecessary risks.
+2. **Open in Visual Studio**  
+   Open `AI-Project.slnx` (or `AI-Project.vcxproj`) in Visual Studio.
 
-Medic (M): Unarmed support unit. Follows the fighters and can restore their health (HP) to 100% upon contact.
+3. **Verify library paths**  
+   The project is pre-configured to link against the included `freeglut.lib` and `glew32.lib`. If you move files, update:
+   - **Include Directories** → path to `freeglut.h` / `glew.h`
+   - **Library Directories** → path to `.lib` files
+   - **Linker → Input** → `freeglut.lib;glew32.lib;opengl32.lib`
 
-Supplier (S): Unarmed support unit. Replenishes the fighters' ammunition back to 30 bullets upon contact.
+4. **Place DLLs alongside the executable**  
+   Copy `freeglut.dll` and `glew32.dll` into `x64\Debug\` (or `Release\`) next to `AI-Project.exe`. The audio files (`shoot.wav`, `grenade.wav`) must be there too.
 
+5. **Build and run**  
+   Press `Ctrl+F5` in Visual Studio (or `F5` to debug).
 
-How to Run
-Ensure you have a C++ IDE installed (e.g., Visual Studio).
+---
 
-Make sure the FreeGLUT library is properly configured in your project (include glut.h, and link freeglut.lib, glew32.lib).
+## Controls
 
-Ensure the audio files shoot.wav and grenade.wav are placed in the main execution directory.
+| Key / Action | Effect |
+|---|---|
+| `M` | Toggle influence map heatmap overlay inside rooms |
+| Left Mouse Click on **RESTART GAME** | Reset the maze and start a new battle |
 
-Compile and run.
+---
 
-Controls:
+## Project Structure
 
-M Key: Toggle the visual Influence Map (Heatmap) inside rooms.
-
-Left Mouse Click: Click the RESTART GAME button in the bottom right panel to reset the maze and start a new battle.
-
-
-Project Structure
-main.cpp - The core of the system. Generates the maze, computes the A* algorithm, runs the game loop (Update), and handles OpenGL drawing functions.
-
-Agent.h / Agent.cpp - Defines the Agent class (FSM, personal data, equipment, and traits).
-
-Cell.h / Cell.cpp / CompareCells.h - Infrastructure for the navigation algorithm (A*).
-
-shoot.wav / grenade.wav - Audio assets.
+```
+AI-Battle-Simulation/
+├── main.cpp          # Game loop, maze generation, A* algorithm, OpenGL rendering
+├── Agent.h/.cpp      # Agent class: FSM, traits, equipment, decision-making
+├── Cell.h/.cpp       # Grid cell data and navigation support for A*
+├── shoot.wav         # Gunfire sound effect
+├── grenade.wav       # Grenade explosion sound effect
+├── freeglut.dll/.lib # FreeGLUT runtime and import library
+└── glew32.dll/.lib   # GLEW runtime and import library
+```

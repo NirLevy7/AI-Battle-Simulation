@@ -1,0 +1,28 @@
+# Build output
+x64/
+Debug/
+Release/
+*.exe
+*.pdb
+*.ilk
+
+# Visual Studio generated
+.vs/
+*.user
+*.suo
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+ipch/
+*.tlog
+*.log
+*.idb
+*.obj
+*.pch
+*.res
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake

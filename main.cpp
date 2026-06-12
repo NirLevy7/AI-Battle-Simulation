@@ -16,7 +16,6 @@
 
 using namespace std;
 
-
 const int MSZ = 100;
 const int UI_WIDTH = 30;
 const int WALL = 1;
@@ -28,7 +27,6 @@ const int AMMO_PICKUP = 5;
 
 int windowWidth = 1200;
 int windowHeight = 900;
-
 
 const double BTN_X1 = MSZ + 2.0;
 const double BTN_X2 = MSZ + 28.0;
@@ -58,7 +56,6 @@ struct CombatEffect {
 };
 vector<CombatEffect> currentEffects;
 
-
 struct LogMessage {
 	string text;
 	Team team;
@@ -71,7 +68,6 @@ void static AddLog(string msg, Team t) {
 		combatLog.erase(combatLog.begin());
 	}
 }
-
 
 struct CompareCells {
 	bool operator()(const Cell* a, const Cell* b) const { return a->getF() > b->getF(); }
@@ -109,7 +105,26 @@ bool static HasLineOfSight(int r1, int c1, int r2, int c2) {
 	return true;
 }
 
-// חישוב מפת בטיחות עבור תצוגה חזותית (Heatmap)
+Point static GetRoomCenter(int roomId) {
+	for (auto& r : rooms) {
+		if (r.id == roomId) return { r.r + r.h / 2, r.c + r.w / 2 };
+	}
+	return { -1, -1 };
+}
+
+Point static GetClosestRoomCenter(Point pos) {
+	double minDist = 9999;
+	Point best = pos;
+	for (auto& r : rooms) {
+		double d = ManhattanDistance(pos.r, pos.c, r.r + r.h / 2, r.c + r.w / 2);
+		if (d < minDist) {
+			minDist = d;
+			best = { r.r + r.h / 2, r.c + r.w / 2 };
+		}
+	}
+	return best;
+}
+
 double static CalculateCellDanger(int r, int c, Team myTeam) {
 	double danger = 0;
 	for (auto* a : agents) {
@@ -122,7 +137,7 @@ double static CalculateCellDanger(int r, int c, Team myTeam) {
 	return danger;
 }
 
-// הניקוד לשימוש הבינה המלאכותית
+// ניקוד מעודכן: דחיפה משמעותית לשימוש במחסות בתוך חדרים!
 double static GetSafetyScore(int r, int c, Agent& me, Agent& enemy, bool isCurrentPos) {
 	double score = 0;
 	double distToEnemy = ManhattanDistance(r, c, enemy.pos.r, enemy.pos.c);
@@ -169,33 +184,34 @@ double static GetSafetyScore(int r, int c, Agent& me, Agent& enemy, bool isCurre
 		else {
 			double hpRatio = (double)me.hp / 100.0;
 
+			// אם יש מחסה, נעודד אותו להשתמש בו באופן אגרסיבי
+			if (hasCover) {
+				if (!hasLOS) score += 180.0; // מחבוא מושלם
+				else score += 100.0;         // ירי מתוך מחסה
+			}
+
 			if (me.trait == AGGRESSIVE) {
 				if (hpRatio > 0.6) {
 					if (hasLOS) score += 120.0;
-					else score -= 80.0;
-					if (hasCover) score += 5.0;
+					else score -= 40.0;
 				}
 				else {
 					if (hasLOS) score += 60.0;
 					else score -= 20.0;
-					if (hasCover) score += 30.0;
 				}
 			}
 			else {
-				if (hasLOS) score += 50.0;
+				if (hasLOS) score += 40.0;
 				else score -= 10.0;
-				if (hasCover) score += 80.0;
 			}
 
-			if (me.timeWithoutLOS > 6) {
-				if (hasLOS) score += 200.0;
-				if (hasCover && !hasLOS) score -= 60.0;
-			}
+			// עונש על עמידה בשטח פתוח
+			if (!hasCover && hasLOS) score -= 50.0;
 		}
 	}
 	else {
 		score += distToEnemy * 10.0;
-		if (hasCover) score += 40.0;
+		if (hasCover) score += 80.0;
 		if (hasLOS) score -= 50.0;
 	}
 
@@ -291,18 +307,15 @@ void static CreateRoom(int id, int r, int c, int h, int w) {
 	}
 }
 
+// שדרוג: מסדרונות שומרים על החדרים קיימים ולא הורסים מחסות
 void static CreateCorridor(int r1, int c1, int r2, int c2) {
 	int currR = r1, currC = c1;
-	while (currR != r2) {
-		if (maze[currR][currC] == WALL) maze[currR][currC] = SPACE;
-		if (maze[currR][currC + 1] == WALL) maze[currR][currC + 1] = SPACE;
-		currR += (r2 > currR) ? 1 : -1;
-	}
-	while (currC != c2) {
-		if (maze[currR][currC] == WALL) maze[currR][currC] = SPACE;
-		if (maze[currR + 1][currC] == WALL) maze[currR + 1][currC] = SPACE;
-		currC += (c2 > currC) ? 1 : -1;
-	}
+	auto carve = [&](int r, int c) {
+		if (maze[r][c] == WALL) maze[r][c] = SPACE;
+		if (maze[r][c + 1] == WALL) maze[r][c + 1] = SPACE;
+		};
+	while (currR != r2) { carve(currR, currC); currR += (r2 > currR) ? 1 : -1; }
+	while (currC != c2) { carve(currR, currC); currC += (c2 > currC) ? 1 : -1; }
 }
 
 void static AddAgent(Team t, Role r, int roomIndex) {
@@ -317,6 +330,9 @@ void static AddAgent(Team t, Role r, int roomIndex) {
 	agents.push_back(newAgent);
 }
 
+// ---------------------------------------------------------
+// פתרון להערה מס' 1: יצירת מבוך רנדומלי אמיתי (Procedural)
+// ---------------------------------------------------------
 void static InitMaze() {
 	gameOver = false;
 	extraDelay = 0;
@@ -332,25 +348,56 @@ void static InitMaze() {
 		for (int j = 0; j < MSZ; j++) { maze[i][j] = WALL; roomMap[i][j] = 0; }
 	}
 	rooms.clear();
-	CreateRoom(1, 10, 10, 20, 20);
-	CreateRoom(2, 10, 70, 20, 20);
-	CreateRoom(3, 70, 10, 20, 20);
-	CreateRoom(4, 70, 70, 20, 20);
-	CreateRoom(5, 40, 40, 20, 20);
 
-	CreateCorridor(20, 20, 50, 50); CreateCorridor(20, 80, 50, 50);
-	CreateCorridor(80, 20, 50, 50); CreateCorridor(80, 80, 50, 50);
+	// הגרלת חדרים רנדומליים ללא חפיפה
+	int numRooms = 6 + rand() % 3; // בין 6 ל-8 חדרים
+	int attempts = 0;
+	while (rooms.size() < numRooms && attempts < 200) {
+		attempts++;
+		int w = 12 + rand() % 10;
+		int h = 12 + rand() % 10;
+		int r = 2 + rand() % (MSZ - h - 4);
+		int c = 2 + rand() % (MSZ - w - 4);
 
+		bool overlap = false;
+		for (auto& room : rooms) {
+			if (!(r + h + 2 < room.r || r > room.r + room.h + 2 ||
+				c + w + 2 < room.c || c > room.c + room.w + 2)) {
+				overlap = true;
+				break;
+			}
+		}
+		if (!overlap) {
+			CreateRoom(rooms.size() + 1, r, c, h, w);
+		}
+	}
+
+	// חיבור החדרים במסדרונות
+	for (size_t i = 0; i < rooms.size() - 1; i++) {
+		Point p1 = { rooms[i].r + rooms[i].h / 2, rooms[i].c + rooms[i].w / 2 };
+		Point p2 = { rooms[i + 1].r + rooms[i + 1].h / 2, rooms[i + 1].c + rooms[i + 1].w / 2 };
+		CreateCorridor(p1.r, p1.c, p2.r, p2.c);
+	}
+	// סגירת מעגל
+	if (rooms.size() > 1) {
+		Point p1 = { rooms.back().r + rooms.back().h / 2, rooms.back().c + rooms.back().w / 2 };
+		Point p2 = { rooms.front().r + rooms.front().h / 2, rooms.front().c + rooms.front().w / 2 };
+		CreateCorridor(p1.r, p1.c, p2.r, p2.c);
+	}
+
+	// פיזור מחסות
 	for (auto& room : rooms) {
-		int numCovers = 8 + rand() % 4;
+		int numCovers = 6 + rand() % 5;
 		for (int k = 0; k < numCovers; k++) {
-			int cr = room.r + 2 + rand() % (room.h - 4), cc = room.c + 2 + rand() % (room.w - 4);
+			int cr = room.r + 2 + rand() % (room.h - 4);
+			int cc = room.c + 2 + rand() % (room.w - 4);
 			maze[cr][cc] = COVER; maze[cr + 1][cc] = COVER;
 			if (rand() % 2 == 0) maze[cr][cc + 1] = COVER;
 		}
 	}
 
-	for (int k = 0; k < 2; k++) {
+	// פיזור קופסאות בריאות ותחמושת
+	for (int k = 0; k < 3; k++) {
 		int hr, hc;
 		do {
 			Room& r = rooms[rand() % rooms.size()];
@@ -359,7 +406,7 @@ void static InitMaze() {
 		maze[hr][hc] = HEALTH_PICKUP;
 	}
 
-	for (int k = 0; k < 2; k++) {
+	for (int k = 0; k < 3; k++) {
 		int ar, ac;
 		do {
 			Room& r = rooms[rand() % rooms.size()];
@@ -463,14 +510,7 @@ void static UpdateGame() {
 
 			if (a->stuckCounter >= 3 && roomMap[a->pos.r][a->pos.c] == 0 && !a->isForcedRetreat) {
 				a->isForcedRetreat = true;
-				double minDist = 9999;
-				for (auto& r : rooms) {
-					double dToRoom = ManhattanDistance(a->pos.r, a->pos.c, r.r + r.h / 2, r.c + r.w / 2);
-					if (dToRoom < minDist) {
-						minDist = dToRoom;
-						a->currentTarget = { r.r + r.h / 2, r.c + r.w / 2 };
-					}
-				}
+				a->currentTarget = GetClosestRoomCenter(a->pos); // מחפש את החדר הקרוב כדי לצאת מהמסדרון
 				a->stuckCounter = 0;
 				string tName = (a->team == TEAM_A) ? "Red" : "Blue";
 				AddLog(tName + " unit falls back to clear path!", a->team);
@@ -535,7 +575,7 @@ void static UpdateGame() {
 		if (a->role == FIGHTER) {
 			if (needsHeal) a->state = STATE_SEEK_MEDIC;
 			else if (needsAmmo) a->state = STATE_SEEK_AMMO;
-			else if (targetEnemyInRoom) a->state = STATE_COMBAT;
+			else if (targetEnemyInRoom) a->state = STATE_COMBAT; // קרב יקרה *רק* אם האויב באותו חדר!
 			else a->state = STATE_HUNT;
 		}
 		else {
@@ -662,6 +702,9 @@ void static UpdateGame() {
 			a->stuckCounter = 0;
 		}
 
+		// ---------------------------------------------------------
+		// פתרון להערה מס' 2: איסור לחימה או הצטופפות במסדרונות!
+		// ---------------------------------------------------------
 		else if (a->state == STATE_HUNT) {
 			Agent* target = nullptr;
 			if (a->role == FIGHTER) target = GetNearestEnemyGlobal(*a);
@@ -671,40 +714,31 @@ void static UpdateGame() {
 				int tRoomId = roomMap[target->pos.r][target->pos.c];
 
 				if (a->role == FIGHTER) {
-					if (myRoom == 0 && tRoomId == 0 && ManhattanDistance(a->pos.r, a->pos.c, target->pos.r, target->pos.c) <= 6) {
-						if (a->team == TEAM_A) {
-							double minDistToRoom = 9999;
-							for (auto& r : rooms) {
-								double dToRoom = ManhattanDistance(a->pos.r, a->pos.c, r.r + r.h / 2, r.c + r.w / 2);
-								if (dToRoom < minDistToRoom) {
-									minDistToRoom = dToRoom;
-									a->currentTarget = { r.r + r.h / 2, r.c + r.w / 2 };
-								}
-							}
+					if (myRoom != 0) { // אני נמצא בחדר
+						if (tRoomId != 0 && tRoomId != myRoom) {
+							// האויב בחדר אחר -> נתקדם לחדר שלו
+							a->currentTarget = GetRoomCenter(tRoomId);
 						}
-						else {
-							a->currentTarget = target->pos;
+						else if (tRoomId == 0) {
+							// האויב נמצא במסדרון! טקטיקה: אל תצא אליו! 
+							// תישאר בחדר שלך ותתמקם קרוב למרכז כדי לפתות אותו להיכנס פנימה, שם המחסות שימושיים.
+							a->currentTarget = GetRoomCenter(myRoom);
 						}
 					}
-					else if (myRoom != 0 && tRoomId == 0) {
-						if (ManhattanDistance(a->pos.r, a->pos.c, target->pos.r, target->pos.c) <= 4) {
-							for (auto& r : rooms) {
-								if (r.id == myRoom) { a->currentTarget = { r.r + r.h / 2, r.c + r.w / 2 }; break; }
-							}
+					else { // אני נמצא במסדרון
+						if (tRoomId != 0) {
+							// האויב בחדר -> ניכנס לחדר שלו
+							a->currentTarget = GetRoomCenter(tRoomId);
 						}
 						else {
-							a->currentTarget = target->pos;
+							// שנינו במסדרונות! נברח לחדר הכי קרוב אלינו כדי לא ליצור "לחימת מסדרון" או פקק.
+							a->currentTarget = GetClosestRoomCenter(a->pos);
 						}
-					}
-					else {
-						a->currentTarget = target->pos;
 					}
 				}
-				else {
+				else { // תומכי הלחימה (חובש/אספקה)
 					if (tRoomId != 0 && myRoom != tRoomId) {
-						for (auto& r : rooms) {
-							if (r.id == tRoomId) { a->currentTarget = { r.r + r.h / 2, r.c + r.w / 2 }; break; }
-						}
+						a->currentTarget = GetRoomCenter(tRoomId);
 					}
 					else {
 						a->currentTarget = target->pos;
@@ -752,7 +786,6 @@ void static DrawInfluenceMap() {
 			if (maze[i][j] == ROOM_FLOOR) {
 				double danger = CalculateCellDanger(i, j, TEAM_A);
 				if (danger > 0) {
-					// כמה שיותר מסוכן, כך ייצבע יותר באדום. ירוק משמעו בטוח.
 					glColor3d(min(1.0, danger * 5.0), 1.0 - min(1.0, danger * 5.0), 0);
 					glRectd(j, i, j + 1, i + 1);
 				}
@@ -823,7 +856,6 @@ void static display() {
 	glClear(GL_COLOR_BUFFER_BIT);
 	double x, y;
 
-	// ציור המבוך
 	for (int i = 0; i < MSZ; i++) {
 		for (int j = 0; j < MSZ; j++) {
 			x = j; y = i;
@@ -879,7 +911,6 @@ void static display() {
 		}
 	}
 
-	// ציור אפקטים (יריות ורימונים)
 	for (auto& eff : currentEffects) {
 		double startX = eff.start.c + 0.5, startY = eff.start.r + 0.5;
 		double targetX = eff.end.c + 0.5, targetY = eff.end.r + 0.5;
@@ -1008,7 +1039,6 @@ void static mouse(int button, int state, int x, int y) {
 	}
 }
 
-// --- האזנה למקלדת ---
 void static keyboard(unsigned char key, int x, int y) {
 	if (key == 'm' || key == 'M' || key == 246) {
 		showInfluenceMap = !showInfluenceMap;
@@ -1021,7 +1051,6 @@ int main(int argc, char* argv[]) {
 	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
 	glutInitWindowSize(windowWidth, windowHeight);
 
-	// --- חישוב אמצע המסך הדינמי ---
 	int screenWidth = glutGet(GLUT_SCREEN_WIDTH);
 	int screenHeight = glutGet(GLUT_SCREEN_HEIGHT);
 
